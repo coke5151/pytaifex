@@ -1,0 +1,25 @@
+line-length = 120
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "A",   # flake8-builtins
+    "ARG", # flake8-unused-arguments
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "RUF", # ruff-specific rules
+]
+
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[lint.per-file-ignores]
+"*.ipynb" = ["F401", "F841", "I001"] # Jupyter Notebook
+
+[format]
+quote-style = "double"
