@@ -5,7 +5,10 @@ description = "An wrapper of taifex official TTB api."
 readme = "README.md"
 authors = [{ name = "pytree", email = "houjunqimail@gmail.com" }]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "requests>=2.32.3",
+    "zmq>=0.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]

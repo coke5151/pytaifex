@@ -2,7 +2,7 @@ import pytaifex
 
 
 def main() -> None:
-    print(pytaifex.hello())
+    pytaifex.TTB("local/TTBHelp.pyc")
 
 
 if __name__ == "__main__":
