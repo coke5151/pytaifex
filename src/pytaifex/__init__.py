@@ -116,6 +116,14 @@ def _ttb_worker_function(
 
         _ttb_instance = TTBProcessInternal(host, zmq_port, data_q_out, worker_logger)
         worker_logger.info("Internal TTB instance initialized and running.")
+        data_q_out.put(
+            {
+                "type": "info",
+                "source": "worker_initialization_runtime",
+                "message": "Internal TTB instance initialized and running.",
+                "success": True,
+            }
+        )
 
         running = True
         while running:
@@ -170,6 +178,7 @@ class TTB:
         host: str = "http://localhost:8080",
         zmq_port: int = 51141,
         logger: logging.Logger | None = None,
+        timeout: int = 5,
     ):
         if logger is not None:
             self.logger = logger
@@ -203,7 +212,7 @@ class TTB:
         self.logger.info("Initializing wrapper of TTB")
         try:
             self.__start_log_listener_thread()
-            self.__start_worker()
+            self.__start_worker(timeout)
             self.__start_data_listener_thread()
             self.logger.info("TTB wrapper initialized.")
         except Exception as e:
@@ -336,7 +345,7 @@ class TTB:
         self.__log_listener_thread.start()
         self.logger.debug("Logging listener thread started.")
 
-    def __start_worker(self):
+    def __start_worker(self, timeout):
         if self.__worker_process and self.__worker_process.is_alive():
             self.logger.warning("Worker process already started")
             return
@@ -357,6 +366,24 @@ class TTB:
         )
         self.__worker_process.start()
         self.logger.info(f"Worker process started. PID: {self.__worker_process.pid}")
+
+        # wait for the worker to initialize
+        try:
+            while True:
+                data = self.__data_queue.get(timeout=timeout)
+                if (
+                    isinstance(data, dict)
+                    and data.get("type") == "info"
+                    and data.get("source") == "worker_initialization_runtime"
+                    and data.get("success") is True
+                ):
+                    break
+        except queue.Empty as e:
+            self.logger.error("Timeout waiting for worker to initialize.")
+            raise TimeoutError("Timeout waiting for worker to initialize.") from e
+        except Exception as e:
+            self.logger.error(f"Error waiting for worker to initialize: {e}")
+            raise
 
     def __data_listener(self):
         self.logger.debug("__data_listener started")
