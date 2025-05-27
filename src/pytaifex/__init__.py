@@ -20,6 +20,7 @@ def _load_pyc_internal(pyc_file_path: str, logger: logging.Logger):
         raise Exception(f".pyc file not found at '{pyc_file_path}'")
     if not pyc_file_path.endswith(".pyc"):
         logger.error(f"The provided file '{pyc_file_path}' does not have a .pyc extension.")
+        raise Exception(f"The provided file '{pyc_file_path}' does not have a .pyc extension.")
 
     module_name = "TTBHelp"
 
@@ -103,9 +104,9 @@ def _ttb_worker_function(
                 process_logger: logging.Logger,
             ):
                 super().__init__(host, zmq_port)
-                self.output_queue = output_queue
-                self.process_logger = process_logger
-                self.process_logger.info(f"TTBProcessInternal initialized with host: {host}, zmq_port: {zmq_port}")
+                self._output_queue = output_queue
+                self._process_logger = process_logger
+                self._process_logger.info(f"TTBProcessInternal initialized with host: {host}, zmq_port: {zmq_port}")
 
             def SHOWQUOTEDATA(self, obj: Any):  # noqa: N802, special method name in pyc file
                 self._process_logger.debug(f"SHOWQUOTEDATA called, data: {obj}")
