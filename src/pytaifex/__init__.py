@@ -20,7 +20,7 @@ class TTB:
         self.__load_pyc(pyc_file_path)
 
     def __load_pyc(self, pyc_file_path: str):
-        self.loaded_module = None
+        self.ttb = None
         self.logger.info(f"Initializing pyc to load module TTBHelp from: {pyc_file_path}")
 
         if not os.path.exists(pyc_file_path):
@@ -38,33 +38,40 @@ class TTB:
                     f"Could not create module spec for TTBHelp from '{pyc_file_path}'. "
                     + "Check Python version compatibility."
                 )
-                return
+                raise Exception(
+                    f"Could not create module spec for TTBHelp from '{pyc_file_path}'. "
+                    + "Check Python version compatibility."
+                )
 
             # 2. Create a module from the spec
-            self.loaded_module = importlib.util.module_from_spec(spec)
+            self.ttb = importlib.util.module_from_spec(spec)
 
-            if self.loaded_module is None:
+            if self.ttb is None:
                 self.logger.error("Error: Could not create module from spec for TTBHelp.")
-                return
+                raise Exception("Error: Could not create module from spec for TTBHelp.")
 
             # 3. Add the module to sys.modules, so it can be imported from other places
-            sys.modules["TTBHelp"] = self.loaded_module
+            sys.modules["TTBHelp"] = self.ttb
 
             # 4. Execute the module's code
             if spec.loader:
-                spec.loader.exec_module(self.loaded_module)
+                spec.loader.exec_module(self.ttb)
                 self.logger.info(f"Successfully loaded TTBHelp from '{pyc_file_path}'")
+                return self.ttb
             else:
                 self.logger.error("Error: No loader found in spec for TTBHelp. Cannot execute module.")
-                self.loaded_module = None
+                self.ttb = None
+                raise Exception("Error: No loader found in spec for TTBHelp. Cannot execute module.")
 
         except ImportError as e:
             self.logger.error(f"ImportError loading TTBHelp from '{pyc_file_path}': {e}")
-            self.loaded_module = None
+            self.ttb = None
             if "TTBHelp" in sys.modules:
                 del sys.modules["TTBHelp"]  # If partially loaded, remove from sys.modules
+            raise Exception(f"ImportError loading TTBHelp from '{pyc_file_path}': {e}") from e
         except Exception as e:
             self.logger.error(f"An unexpected error occurred while loading TTBHelp from '{pyc_file_path}': {e}")
-            self.loaded_module = None  # 清理
+            self.ttb = None  # 清理
             if "TTBHelp" in sys.modules:
                 del sys.modules["TTBHelp"]
+            raise Exception(f"An unexpected error occurred while loading TTBHelp from '{pyc_file_path}': {e}") from e
