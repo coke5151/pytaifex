@@ -90,6 +90,7 @@ def _ttb_worker_function(
 
     queue_log_handler = QueueHandler(log_q_for_main_process)
     worker_logger.addHandler(queue_log_handler)
+    worker_logger.propagate = False
 
     # send all logs to main process
     # the actual log filter is in main process
