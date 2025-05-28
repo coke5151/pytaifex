@@ -9,6 +9,10 @@ from logging.handlers import QueueHandler
 from typing import Any, Callable
 
 
+class SubscribeError(Exception):
+    pass
+
+
 def _load_pyc_internal(pyc_file_path: str, logger: logging.Logger):
     """
     Load pyc module in worker process.
@@ -72,6 +76,7 @@ def _ttb_worker_function(
     zmq_port: int,
     data_q_out: multiprocessing.Queue,
     control_q_in: multiprocessing.Queue,
+    response_q_in: multiprocessing.Queue,
     log_q_for_main_process: multiprocessing.Queue,
     parent_logger_name: str,
 ):
@@ -129,10 +134,18 @@ def _ttb_worker_function(
         running = True
         while running:
             try:
-                command = control_q_in.get(timeout=0.1)
-                if command == "shutdown":
+                command_dict = control_q_in.get(timeout=0.1)
+                if not isinstance(command_dict, dict) or "command" not in command_dict:
+                    worker_logger.error(f"Invalid command received: {command_dict}")
+                    continue
+                if command_dict.get("command") == "shutdown":
                     worker_logger.info("Received shutdown command, exiting TTB worker.")
                     running = False
+                if command_dict.get("command") == "subscribe":
+                    symbols = command_dict.get("symbols", [])
+                    worker_logger.info(f"Received subscribe command for symbol: {', '.join(symbols)}")
+                    resp = _ttb_instance.QUOTEDATA(",".join(symbols))
+                    response_q_in.put(resp)
             except queue.Empty:
                 pass
             except Exception as e:
@@ -201,6 +214,7 @@ class TTB:
         self.__quote_callbacks: list[Callable[[Any], None]] = []
         self.__data_queue: multiprocessing.Queue = multiprocessing.Queue()
         self.__control_queue: multiprocessing.Queue = multiprocessing.Queue()
+        self.__response_queue: multiprocessing.Queue = multiprocessing.Queue()
 
         self.__log_processing_queue: multiprocessing.Queue = multiprocessing.Queue(-1)  # infinite size
         self.__log_listener_thread: threading.Thread | None = None
@@ -225,6 +239,26 @@ class TTB:
         self.logger.info(f"Registering quote callback: {callback.__name__}")
         self.__quote_callbacks.append(callback)
 
+    def subscribe(self, symbols: list[str]):
+        self.logger.info(f"Subscribing to symbols: {', '.join(symbols)}")
+        try:
+            self.__control_queue.put({"command": "subscribe", "symbols": symbols})
+            response = self.__response_queue.get(timeout=5)
+            if response is None:
+                self.logger.info("Subscribed successfully.")
+                return  # official ttb behavior, no response code for subscribe
+            if not isinstance(response, dict):
+                raise SubscribeError(f"Unexpected response: {response}")
+            if response.get("Code") != "0000":
+                raise SubscribeError(response.get("Message", "No message"))
+        except queue.Empty as e:
+            self.logger.error("Timeout waiting for subscribe response.")
+            raise TimeoutError("Timeout waiting for subscribe response.") from e
+        except Exception as e:
+            self.logger.error(f"Unexpected error subscribing: {e}", exc_info=True)
+            raise
+        return None
+
     def is_worker_alive(self) -> bool:
         return self.__worker_process is not None and self.__worker_process.is_alive()
 
@@ -244,7 +278,7 @@ class TTB:
         if self.__worker_process is not None and self.__worker_process.is_alive():
             self.logger.debug("Stopping worker process.")
             try:
-                self.__control_queue.put("shutdown")
+                self.__control_queue.put({"command": "shutdown"})
                 self.__worker_process.join(timeout=max(1, timeout // 3))
                 if self.__worker_process.is_alive():
                     self.logger.warning("Worker process did not stop within timeout. Forcing termination.")
@@ -272,7 +306,7 @@ class TTB:
 
         # Clear and close all queues
         self.logger.debug("Clearing and close all queues.")
-        queue_to_close = [self.__data_queue, self.__control_queue, self.__log_processing_queue]
+        queue_to_close = [self.__data_queue, self.__control_queue, self.__response_queue, self.__log_processing_queue]
         for q in queue_to_close:
             if q is not None:
                 try:
@@ -360,6 +394,7 @@ class TTB:
                 self.zmq_port,
                 self.__data_queue,
                 self.__control_queue,
+                self.__response_queue,
                 self.__log_processing_queue,
                 self.logger.name,
             ),
