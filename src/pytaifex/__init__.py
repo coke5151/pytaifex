@@ -134,6 +134,9 @@ class OrderData:
     def __repr__(self):
         return self.__str__()
 
+    def __eq__(self, another):
+        return self.order_number == another.order_number and self.order_id == another.order_id
+
 
 def _load_pyc_internal(pyc_file_path: str, logger: logging.Logger):
     """
