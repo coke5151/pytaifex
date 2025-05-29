@@ -138,6 +138,57 @@ class OrderData:
         return self.order_number == another.order_number and self.order_id == another.order_id
 
 
+class PositionData:
+    def __init__(self, position_dict: dict):
+        self.deal_id: str = position_dict.get("DealID", "")
+        self.order_kind: str = position_dict.get("OrderKind", "")
+        self.symbol1_id: str = position_dict.get("ComdID1", "")
+        self.side1: OrderSide = OrderSide.BUY if position_dict.get("ComdBS1", "") == "B" else OrderSide.SELL
+        self.type1: str = position_dict.get("ComdType1", "")
+        self.symbol2_id: str = position_dict.get("ComdID2", "")
+        self.side2: OrderSide = OrderSide.BUY if position_dict.get("ComdBS2", "") == "B" else OrderSide.SELL
+        self.type2: str = position_dict.get("ComdType2", "")
+        self.hold: str = position_dict.get("Hold", "")
+        self.deal_price: str = position_dict.get("DealPrice", "")
+        self.settle_price: str = position_dict.get("SettlePrice", "")
+        self.floating_profit_loss: str = position_dict.get("FloatingProfitLoss", "")
+        self.currency: str = position_dict.get("Curr4217", "")
+        self.symbol1_name: str = position_dict.get("ComdName1", "")
+        self.symbol2_name: str = position_dict.get("ComdName2", "")
+        self.trade_hour: str = position_dict.get("TradeHour", "")
+        self.trade_day: str = position_dict.get("TradeDay", "")
+
+    def to_dict(self):
+        return {
+            "deal_id": self.deal_id,
+            "order_kind": self.order_kind,
+            "symbol1_id": self.symbol1_id,
+            "side1": "買別" if self.side1.value == "1" else "賣別",
+            "type1": self.type1,
+            "symbol2_id": self.symbol2_id,
+            "side2": "買別" if self.side2.value == "1" else "賣別",
+            "type2": self.type2,
+            "hold": self.hold,
+            "deal_price": self.deal_price,
+            "settle_price": self.settle_price,
+            "floating_profit_loss": self.floating_profit_loss,
+            "currency": self.currency,
+            "symbol1_name": self.symbol1_name,
+            "symbol2_name": self.symbol2_name,
+            "trade_hour": self.trade_hour,
+            "trade_day": self.trade_day,
+        }
+
+    def __str__(self):
+        return f"PositionData({self.deal_id}, {self.symbol1_id}, {self.symbol2_id}, {self.trade_day})"
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __eq__(self, another):
+        return self.deal_id == another.deal_id
+
+
 def _load_pyc_internal(pyc_file_path: str, logger: logging.Logger):
     """
     Load pyc module in worker process.
@@ -295,6 +346,10 @@ def _ttb_worker_function(
                     order_dict = command_dict.get("order_dict", {})
                     worker_logger.info("Received cancel order command.")
                     resp = _ttb_instance.CANCELORDER(command_dict.get("order_dict", {}))
+                    response_q_out.put(resp)
+                elif command_dict.get("command") == "query_positions":
+                    worker_logger.info("Received query positions command.")
+                    resp = _ttb_instance.QUERYRESTOREFILLREPORT()
                     response_q_out.put(resp)
                 else:
                     worker_logger.error(f"Unknown command received: {command_dict}")
@@ -565,6 +620,30 @@ class TTB:
             raise TimeoutError("Timeout waiting for cancel order response.") from e
         except Exception as e:
             self.logger.error(f"Unexpected error cancelling order: {e}", exc_info=True)
+            raise
+
+    def query_positions(self):
+        self.logger.info("Querying positions.")
+        try:
+            self.__control_queue.put({"command": "query_positions"})
+            response = self.__response_queue.get(timeout=5)
+            self.logger.debug(f"Query positions response: {response}")
+            if response is None:
+                raise OrderError("Query positions command sent successfully but received None as response.")
+            if not isinstance(response, dict) or "Code" not in response or "Data" not in response:
+                raise OrderError(f"Unexpected response: {response}")
+            if response.get("Code") != "0000":
+                raise OrderError(
+                    f"error querying positions ({response.get('Code', 'No code')}): "
+                    + f"{response.get('ErrMsg', 'No ErrMsg')}"
+                )
+            self.logger.info("Positions queried successfully.")
+            return [PositionData(position_dict) for position_dict in response.get("Data", [])]
+        except queue.Empty as e:
+            self.logger.error("Timeout waiting for query positions response.")
+            raise TimeoutError("Timeout waiting for query positions response.") from e
+        except Exception as e:
+            self.logger.error(f"Unexpected error querying positions: {e}", exc_info=True)
             raise
 
     def is_worker_alive(self) -> bool:
