@@ -291,6 +291,11 @@ def _ttb_worker_function(
                     worker_logger.info("Received query orders command.")
                     resp = _ttb_instance.QUERYRESTOREREPORT()
                     response_q_out.put(resp)
+                elif command_dict.get("command") == "cancel_order":
+                    order_dict = command_dict.get("order_dict", {})
+                    worker_logger.info("Received cancel order command.")
+                    resp = _ttb_instance.CANCELORDER(command_dict.get("order_dict", {}))
+                    response_q_out.put(resp)
                 else:
                     worker_logger.error(f"Unknown command received: {command_dict}")
             except queue.Empty:
@@ -511,7 +516,7 @@ class TTB:
             self.logger.error(f"Unexpected error changing quantity: {e}", exc_info=True)
             raise
 
-    def query_orders(self):
+    def query_orders(self, include_done: bool = False):
         self.logger.info("Querying orders.")
         try:
             self.__control_queue.put({"command": "query_orders"})
@@ -527,12 +532,39 @@ class TTB:
                     + f"{response.get('ErrMsg', 'No ErrMsg')}"
                 )
             self.logger.info("Orders queried successfully.")
-            return [OrderData(order_dict) for order_dict in response.get("Data", [])]
+            return [
+                OrderData(order_dict)
+                for order_dict in response.get("Data", [])
+                if include_done or order_dict.get("LESS_VOLM") != "0"
+            ]
         except queue.Empty as e:
             self.logger.error("Timeout waiting for query orders response.")
             raise TimeoutError("Timeout waiting for query orders response.") from e
         except Exception as e:
             self.logger.error(f"Unexpected error querying orders: {e}", exc_info=True)
+            raise
+
+    def cancel_order(self, order_number: str):
+        self.logger.info(f"Cancelling order {order_number}.")
+        order_dict = {"OrdNo": order_number}
+        try:
+            self.__control_queue.put({"command": "cancel_order", "order_dict": order_dict})
+            response = self.__response_queue.get(timeout=5)
+            if response is None:
+                raise OrderError("Cancel order command sent successfully but received None as response.")
+            if not isinstance(response, dict) or "Code" not in response:
+                raise OrderError(f"Unexpected response: {response}")
+            if response.get("Code") != "0000":
+                raise OrderError(
+                    f"error cancelling order ({response.get('Code', 'No code')}): "
+                    + f"{response.get('ErrMsg', 'No ErrMsg')}"
+                )
+            self.logger.info("Order cancelled successfully.")
+        except queue.Empty as e:
+            self.logger.error("Timeout waiting for cancel order response.")
+            raise TimeoutError("Timeout waiting for cancel order response.") from e
+        except Exception as e:
+            self.logger.error(f"Unexpected error cancelling order: {e}", exc_info=True)
             raise
 
     def is_worker_alive(self) -> bool:
