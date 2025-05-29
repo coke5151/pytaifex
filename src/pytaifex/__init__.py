@@ -281,6 +281,11 @@ def _ttb_worker_function(
                     worker_logger.info("Received query orders command.")
                     resp = _ttb_instance.QUERYRESTOREREPORT()
                     response_q_out.put(resp)
+                elif command_dict.get("command") == "change_price":
+                    order_dict = command_dict.get("order_dict", {})
+                    worker_logger.info("Received change price command.")
+                    resp = _ttb_instance.REPLACEPRICE(command_dict.get("order_dict", {}))
+                    response_q_out.put(resp)
                 else:
                     worker_logger.error(f"Unknown command received: {command_dict}")
             except queue.Empty:
@@ -455,9 +460,31 @@ class TTB:
             raise
         return None
 
+    def change_price(self, order_number: str, new_price: str):
+        self.logger.info(f"Changing price of order {order_number} to {new_price}.")
+        order_dict = {"OrdNo": order_number, "Price": new_price}
+        try:
+            self.__control_queue.put({"command": "change_price", "order_dict": order_dict})
+            response = self.__response_queue.get(timeout=5)
+            if response is None:
+                raise OrderError("Change price command sent successfully but received None as response.")
+            if not isinstance(response, dict) or "Code" not in response:
+                raise OrderError(f"Unexpected response: {response}")
+            if response.get("Code") != "0000":
+                raise OrderError(
+                    f"error changing price ({response.get('Code', 'No code')}): "
+                    + f"{response.get('ErrMsg', 'No ErrMsg')}"
+                )
+            self.logger.info("Price changed successfully.")
+        except queue.Empty as e:
+            self.logger.error("Timeout waiting for change price response.")
+            raise TimeoutError("Timeout waiting for change price response.") from e
+        except Exception as e:
+            self.logger.error(f"Unexpected error changing price: {e}", exc_info=True)
+            raise
+
     def query_orders(self):
         self.logger.info("Querying orders.")
-        pass
         try:
             self.__control_queue.put({"command": "query_orders"})
             response = self.__response_queue.get(timeout=5)
