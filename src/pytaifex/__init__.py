@@ -277,14 +277,19 @@ def _ttb_worker_function(
                     worker_logger.info(f"Received create order command: {order_dict}")
                     resp = _ttb_instance.NEWORDER(order_dict)
                     response_q_out.put(resp)
-                elif command_dict.get("command") == "query_orders":
-                    worker_logger.info("Received query orders command.")
-                    resp = _ttb_instance.QUERYRESTOREREPORT()
-                    response_q_out.put(resp)
                 elif command_dict.get("command") == "change_price":
                     order_dict = command_dict.get("order_dict", {})
                     worker_logger.info("Received change price command.")
                     resp = _ttb_instance.REPLACEPRICE(command_dict.get("order_dict", {}))
+                    response_q_out.put(resp)
+                elif command_dict.get("command") == "change_qty":
+                    order_dict = command_dict.get("order_dict", {})
+                    worker_logger.info("Received change qty command.")
+                    resp = _ttb_instance.REPLACEQTY(command_dict.get("order_dict", {}))
+                    response_q_out.put(resp)
+                elif command_dict.get("command") == "query_orders":
+                    worker_logger.info("Received query orders command.")
+                    resp = _ttb_instance.QUERYRESTOREREPORT()
                     response_q_out.put(resp)
                 else:
                     worker_logger.error(f"Unknown command received: {command_dict}")
@@ -481,6 +486,29 @@ class TTB:
             raise TimeoutError("Timeout waiting for change price response.") from e
         except Exception as e:
             self.logger.error(f"Unexpected error changing price: {e}", exc_info=True)
+            raise
+
+    def change_qty(self, order_number: str, new_qty: str):
+        self.logger.info(f"Changing quantity of order {order_number} to {new_qty}.")
+        order_dict = {"OrdNo": order_number, "UdpQty": new_qty}
+        try:
+            self.__control_queue.put({"command": "change_qty", "order_dict": order_dict})
+            response = self.__response_queue.get(timeout=5)
+            if response is None:
+                raise OrderError("Change quantity command sent successfully but received None as response.")
+            if not isinstance(response, dict) or "Code" not in response:
+                raise OrderError(f"Unexpected response: {response}")
+            if response.get("Code") != "0000":
+                raise OrderError(
+                    f"error changing quantity ({response.get('Code', 'No code')}): "
+                    + f"{response.get('ErrMsg', 'No ErrMsg')}"
+                )
+            self.logger.info("Quantity changed successfully.")
+        except queue.Empty as e:
+            self.logger.error("Timeout waiting for change quantity response.")
+            raise TimeoutError("Timeout waiting for change quantity response.") from e
+        except Exception as e:
+            self.logger.error(f"Unexpected error changing quantity: {e}", exc_info=True)
             raise
 
     def query_orders(self):
