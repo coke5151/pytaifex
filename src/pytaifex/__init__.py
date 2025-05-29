@@ -13,6 +13,54 @@ class SubscribeError(Exception):
     pass
 
 
+class QuoteData:
+    def __init__(self, data: dict):
+        self.symbol: str = data.get("Symbol", "")
+        self.name: str = data.get("Name", "")
+        self.open_ref: str = data.get("OpenRef", "")
+        self.open_price: str = data.get("OpenPrice", "")
+        self.high_price: str = data.get("HighPrice", "")
+        self.low_price: str = data.get("LowhPrice", "")
+        self.deno: float = data.get("Deno", 0.0)
+        self.price: str = data.get("Price", "")
+        self.qty: str = data.get("Qty", "")
+        self.change_price: str = data.get("Change", "")
+        self.change_ratio: str = data.get("ChangeRatio", "")
+        self.bid_ps: str = data.get("BidPs", "")
+        self.bid_pv: str = data.get("BidPv", "")
+        self.ask_ps: str = data.get("AskPs", "")
+        self.ask_pv: str = data.get("AskPv", "")
+        self.tick_time: str = data.get("TickTime", "")
+        self.volume: str = data.get("Volume", "")
+
+    def to_dict(self):
+        return {
+            "symbol": self.symbol,
+            "name": self.name,
+            "open_ref": self.open_ref,
+            "open_price": self.open_price,
+            "high_price": self.high_price,
+            "low_price": self.low_price,
+            "deno": self.deno,
+            "price": self.price,
+            "qty": self.qty,
+            "change_price": self.change_price,
+            "change_ratio": self.change_ratio,
+            "bid_ps": self.bid_ps,
+            "bid_pv": self.bid_pv,
+            "ask_ps": self.ask_ps,
+            "ask_pv": self.ask_pv,
+            "tick_time": self.tick_time,
+            "volume": self.volume,
+        }
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __str__(self):
+        return f"QuoteData({self.symbol}, {self.tick_time})"
+
+
 def _load_pyc_internal(pyc_file_path: str, logger: logging.Logger):
     """
     Load pyc module in worker process.
@@ -236,7 +284,7 @@ class TTB:
             self.shutdown(timeout=2)
             raise
 
-    def register_quote_callback(self, callback: Callable[[Any], None]):
+    def register_quote_callback(self, callback: Callable[[QuoteData], None]):
         self.logger.info(f"Registering quote callback: {callback.__name__}")
         self.__quote_callbacks.append(callback)
 
@@ -246,8 +294,19 @@ class TTB:
             self.__control_queue.put({"command": "subscribe", "symbols": symbols})
             response = self.__response_queue.get(timeout=5)
             if response is None:
-                self.logger.info("Subscribed successfully.")
-                return  # official ttb behavior, no response code for subscribe
+                self.logger.info("Subscribe command sent successfully.")
+                self.logger.warning("Note: TTB official API does not return response for subscribe command.")
+                self.logger.warning(
+                    "You should see data in callback soon if subscription is successful and there is data available."
+                )
+                self.logger.warning(
+                    "If you don't see data in callback, it is possible that:\n"
+                    + "\t1. The symbol you subscribed is not available.\n"
+                    + "\t2. The symbol you subscribed is not trading.\n"
+                    + "\t3. The symbol you subscribed is not in the correct format.\n"
+                    + "\t4. You did'nt subscribe to the symbol in the official TTB GUI at the same time."
+                )
+                return
             if not isinstance(response, dict):
                 raise SubscribeError(f"Unexpected response: {response}")
             if response.get("Code") != "0000":
@@ -437,7 +496,7 @@ class TTB:
                     continue
                 for callback in self.__quote_callbacks:
                     try:
-                        callback(data)
+                        callback(QuoteData(data))
                     except Exception as e:
                         self.logger.error(f"Error in callback: {e}", exc_info=True)
             except queue.Empty:
