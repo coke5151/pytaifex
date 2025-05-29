@@ -5,14 +5,38 @@ import os
 import queue
 import sys
 import threading
+from enum import Enum
 from logging.handlers import QueueHandler
 from typing import Any, Callable
 
 
+# Errors
 class SubscribeError(Exception):
     pass
 
 
+class OrderError(Exception):
+    pass
+
+
+# Enums
+class TimeInForce(Enum):
+    ROD = "1"
+    IOC = "2"
+    FOK = "3"
+
+
+class OrderSide(Enum):
+    BUY = "1"
+    SELL = "2"
+
+
+class OrderType(Enum):
+    MARKET = "1"
+    LIMIT = "2"
+
+
+# Class
 class QuoteData:
     def __init__(self, data: dict):
         self.symbol: str = data.get("Symbol", "")
@@ -59,6 +83,56 @@ class QuoteData:
 
     def __str__(self):
         return f"QuoteData({self.symbol}, {self.tick_time})"
+
+    def __eq__(self, another):
+        return self.symbol == another.symbol and self.tick_time == another.tick_time
+
+
+class OrderData:
+    def __init__(self, order_dict: dict):
+        self.order_number: str = order_dict.get("ORDNO", "")
+        self.symbol_id: str = order_dict.get("COMD_ID", "")
+        self.symbol_name: str = order_dict.get("COMD_NAME", "")
+        self.status: str = order_dict.get("STAT", "")
+        if order_dict.get("BS", "") == "買別":
+            self.side = OrderSide.BUY
+        elif order_dict.get("BS", "") == "賣別":
+            self.side = OrderSide.SELL
+        else:
+            raise ValueError(f"Unknown order side: {order_dict.get('BS', '')}")
+        self.ofst_id: str = order_dict.get("OFST_ID", "")
+        self.order_price: str = order_dict.get("ORDR_PRCE", "")
+        self.order_qty: str = order_dict.get("VOLM", "")
+        self.pending_qty: str = order_dict.get("LESS_VOLM", "")
+        self.filled_qty: str = order_dict.get("DEAL_TOTL", "")
+        self.filled_price: str = order_dict.get("DEAL_PRCE", "")
+        self.order_id: str = order_dict.get("ORDR_ID", "")
+        self.order_date: str = order_dict.get("ORDDT", "")
+        self.order_time: str = order_dict.get("ORDTM", "")
+
+    def to_dict(self):
+        return {
+            "order_number": self.order_number,
+            "symbol_id": self.symbol_id,
+            "symbol_name": self.symbol_name,
+            "status": self.status,
+            "side": "買別" if self.side.value == "1" else "賣別",
+            "ofst_id": self.ofst_id,
+            "order_price": self.order_price,
+            "order_qty": self.order_qty,
+            "pending_qty": self.pending_qty,
+            "filled_qty": self.filled_qty,
+            "filled_price": self.filled_price,
+            "order_id": self.order_id,
+            "order_date": self.order_date,
+            "order_time": self.order_time,
+        }
+
+    def __str__(self):
+        return f"OrderData({self.order_number}, {self.symbol_id}, {self.status}, {self.side}, {self.order_time})"
+
+    def __repr__(self):
+        return self.__str__()
 
 
 def _load_pyc_internal(pyc_file_path: str, logger: logging.Logger):
@@ -124,7 +198,7 @@ def _ttb_worker_function(
     zmq_port: int,
     data_q_out: multiprocessing.Queue,
     control_q_in: multiprocessing.Queue,
-    response_q_in: multiprocessing.Queue,
+    response_q_out: multiprocessing.Queue,
     log_q_for_main_process: multiprocessing.Queue,
     parent_logger_name: str,
 ):
@@ -190,11 +264,22 @@ def _ttb_worker_function(
                 if command_dict.get("command") == "shutdown":
                     worker_logger.info("Received shutdown command, exiting TTB worker.")
                     running = False
-                if command_dict.get("command") == "subscribe":
+                elif command_dict.get("command") == "subscribe":
                     symbols = command_dict.get("symbols", [])
                     worker_logger.info(f"Received subscribe command for symbol: {', '.join(symbols)}")
                     resp = _ttb_instance.QUOTEDATA(",".join(symbols))
-                    response_q_in.put(resp)
+                    response_q_out.put(resp)
+                elif command_dict.get("command") == "create_order":
+                    order_dict = command_dict.get("order_dict", {})
+                    worker_logger.info(f"Received create order command: {order_dict}")
+                    resp = _ttb_instance.NEWORDER(order_dict)
+                    response_q_out.put(resp)
+                elif command_dict.get("command") == "query_orders":
+                    worker_logger.info("Received query orders command.")
+                    resp = _ttb_instance.QUERYRESTOREREPORT()
+                    response_q_out.put(resp)
+                else:
+                    worker_logger.error(f"Unknown command received: {command_dict}")
             except queue.Empty:
                 pass
             except Exception as e:
@@ -293,6 +378,7 @@ class TTB:
         try:
             self.__control_queue.put({"command": "subscribe", "symbols": symbols})
             response = self.__response_queue.get(timeout=5)
+            self.logger.debug(f"Subscribe response: {response}")
             if response is None:
                 self.logger.info("Subscribe command sent successfully.")
                 self.logger.warning("Note: TTB official API does not return response for subscribe command.")
@@ -310,7 +396,7 @@ class TTB:
             if not isinstance(response, dict):
                 raise SubscribeError(f"Unexpected response: {response}")
             if response.get("Code") != "0000":
-                raise SubscribeError(response.get("Message", "No message"))
+                raise SubscribeError(response.get("ErrMsg", "No ErrMsg"))
         except queue.Empty as e:
             self.logger.error("Timeout waiting for subscribe response.")
             raise TimeoutError("Timeout waiting for subscribe response.") from e
@@ -318,6 +404,78 @@ class TTB:
             self.logger.error(f"Unexpected error subscribing: {e}", exc_info=True)
             raise
         return None
+
+    def create_order(
+        self,
+        symbol1: str,
+        side1: OrderSide,
+        price: str,
+        time_in_force: TimeInForce,
+        order_type: OrderType,
+        order_qty: str,
+        day_trade: bool,
+        symbol2: str | None = None,
+        side2: OrderSide | None = None,
+    ):
+        self.logger.info(f"Creating order for {symbol1} at price {price} with quantity {order_qty}.")
+        order_dict = {
+            "Symbol1": symbol1,
+            "Price": price,
+            "TimeInForce": time_in_force.value,
+            "Side1": side1.value,
+            "OrderType": order_type.value,
+            "OrderQty": order_qty,
+            "DayTrade": "1" if day_trade else "0",
+            "Symbol2": symbol2 if symbol2 is not None else "",
+            "Side2": side2.value if side2 is not None else "",
+            "PositionEffect": "",
+        }
+        try:
+            self.__control_queue.put({"command": "create_order", "order_dict": order_dict})
+            response = self.__response_queue.get(timeout=5)
+            self.logger.debug(f"Create order response: {response}")
+            if response is None:
+                raise OrderError("Order creation command sent successfully but received None as response.")
+            if not isinstance(response, dict) or "Code" not in response:
+                raise OrderError(f"Unexpected response: {response}")
+            if response.get("Code") != "0000":
+                raise OrderError(
+                    f"error creating order ({response.get('Code', 'No code')}): "
+                    + f"{response.get('ErrMsg', 'No ErrMsg')}"
+                )
+            self.logger.info("Order created successfully.")
+        except queue.Empty as e:
+            self.logger.error("Timeout waiting for create order response.")
+            raise TimeoutError("Timeout waiting for create order response.") from e
+        except Exception as e:
+            self.logger.error(f"Unexpected error creating order: {e}", exc_info=True)
+            raise
+        return None
+
+    def query_orders(self):
+        self.logger.info("Querying orders.")
+        pass
+        try:
+            self.__control_queue.put({"command": "query_orders"})
+            response = self.__response_queue.get(timeout=5)
+            self.logger.debug(f"Query orders response: {response}")
+            if response is None:
+                raise OrderError("Query orders command sent successfully but received None as response.")
+            if not isinstance(response, dict) or "Code" not in response or "Data" not in response:
+                raise OrderError(f"Unexpected response: {response}")
+            if response.get("Code") != "0000":
+                raise OrderError(
+                    f"error querying orders ({response.get('Code', 'No code')}): "
+                    + f"{response.get('ErrMsg', 'No ErrMsg')}"
+                )
+            self.logger.info("Orders queried successfully.")
+            return [OrderData(order_dict) for order_dict in response.get("Data", [])]
+        except queue.Empty as e:
+            self.logger.error("Timeout waiting for query orders response.")
+            raise TimeoutError("Timeout waiting for query orders response.") from e
+        except Exception as e:
+            self.logger.error(f"Unexpected error querying orders: {e}", exc_info=True)
+            raise
 
     def is_worker_alive(self) -> bool:
         return self.__worker_process is not None and self.__worker_process.is_alive()
