@@ -338,8 +338,8 @@ def _ttb_worker_function(
                     worker_logger.info("Received change qty command.")
                     resp = _ttb_instance.REPLACEQTY(command_dict.get("order_dict", {}))
                     response_q_out.put(resp)
-                elif command_dict.get("command") == "query_orders":
-                    worker_logger.info("Received query orders command.")
+                elif command_dict.get("command") == "get_orders":
+                    worker_logger.info("Received get orders command.")
                     resp = _ttb_instance.QUERYRESTOREREPORT()
                     response_q_out.put(resp)
                 elif command_dict.get("command") == "cancel_order":
@@ -347,9 +347,13 @@ def _ttb_worker_function(
                     worker_logger.info("Received cancel order command.")
                     resp = _ttb_instance.CANCELORDER(command_dict.get("order_dict", {}))
                     response_q_out.put(resp)
-                elif command_dict.get("command") == "query_positions":
-                    worker_logger.info("Received query positions command.")
+                elif command_dict.get("command") == "get_positions":
+                    worker_logger.info("Received get positions command.")
                     resp = _ttb_instance.QUERYRESTOREFILLREPORT()
+                    response_q_out.put(resp)
+                elif command_dict.get("command") == "get_accounts":
+                    worker_logger.info("Received get accounts command.")
+                    resp = _ttb_instance.QUERYMARGIN()
                     response_q_out.put(resp)
                 else:
                     worker_logger.error(f"Unknown command received: {command_dict}")
@@ -571,32 +575,32 @@ class TTB:
             self.logger.error(f"Unexpected error changing quantity: {e}", exc_info=True)
             raise
 
-    def query_orders(self, include_done: bool = False):
-        self.logger.info("Querying orders.")
+    def get_orders(self, include_done: bool = False):
+        self.logger.info("Getting orders.")
         try:
-            self.__control_queue.put({"command": "query_orders"})
+            self.__control_queue.put({"command": "get_orders"})
             response = self.__response_queue.get(timeout=5)
-            self.logger.debug(f"Query orders response: {response}")
+            self.logger.debug(f"Get orders response: {response}")
             if response is None:
-                raise OrderError("Query orders command sent successfully but received None as response.")
+                raise OrderError("Get orders command sent successfully but received None as response.")
             if not isinstance(response, dict) or "Code" not in response or "Data" not in response:
                 raise OrderError(f"Unexpected response: {response}")
             if response.get("Code") != "0000":
                 raise OrderError(
-                    f"error querying orders ({response.get('Code', 'No code')}): "
+                    f"error getting orders ({response.get('Code', 'No code')}): "
                     + f"{response.get('ErrMsg', 'No ErrMsg')}"
                 )
-            self.logger.info("Orders queried successfully.")
+            self.logger.info("Orders retrieved successfully.")
             return [
                 OrderData(order_dict)
                 for order_dict in response.get("Data", [])
                 if include_done or order_dict.get("LESS_VOLM") != "0"
             ]
         except queue.Empty as e:
-            self.logger.error("Timeout waiting for query orders response.")
-            raise TimeoutError("Timeout waiting for query orders response.") from e
+            self.logger.error("Timeout waiting for get orders response.")
+            raise TimeoutError("Timeout waiting for get orders response.") from e
         except Exception as e:
-            self.logger.error(f"Unexpected error querying orders: {e}", exc_info=True)
+            self.logger.error(f"Unexpected error getting orders: {e}", exc_info=True)
             raise
 
     def cancel_order(self, order_number: str):
@@ -622,28 +626,52 @@ class TTB:
             self.logger.error(f"Unexpected error cancelling order: {e}", exc_info=True)
             raise
 
-    def query_positions(self):
-        self.logger.info("Querying positions.")
+    def get_positions(self):
+        self.logger.info("Getting positions.")
         try:
-            self.__control_queue.put({"command": "query_positions"})
+            self.__control_queue.put({"command": "get_positions"})
             response = self.__response_queue.get(timeout=5)
-            self.logger.debug(f"Query positions response: {response}")
+            self.logger.debug(f"Get positions response: {response}")
             if response is None:
-                raise OrderError("Query positions command sent successfully but received None as response.")
+                raise OrderError("Get positions command sent successfully but received None as response.")
             if not isinstance(response, dict) or "Code" not in response or "Data" not in response:
                 raise OrderError(f"Unexpected response: {response}")
             if response.get("Code") != "0000":
                 raise OrderError(
-                    f"error querying positions ({response.get('Code', 'No code')}): "
+                    f"error getting positions ({response.get('Code', 'No code')}): "
                     + f"{response.get('ErrMsg', 'No ErrMsg')}"
                 )
-            self.logger.info("Positions queried successfully.")
+            self.logger.info("Positions retrieved successfully.")
             return [PositionData(position_dict) for position_dict in response.get("Data", [])]
         except queue.Empty as e:
-            self.logger.error("Timeout waiting for query positions response.")
-            raise TimeoutError("Timeout waiting for query positions response.") from e
+            self.logger.error("Timeout waiting for get positions response.")
+            raise TimeoutError("Timeout waiting for get positions response.") from e
         except Exception as e:
-            self.logger.error(f"Unexpected error querying positions: {e}", exc_info=True)
+            self.logger.error(f"Unexpected error getting positions: {e}", exc_info=True)
+            raise
+
+    def get_accounts(self):
+        self.logger.info("Querying accounts.")
+        try:
+            self.__control_queue.put({"command": "get_accounts"})
+            response = self.__response_queue.get(timeout=5)
+            self.logger.debug(f"Query accounts response: {response}")
+            if response is None:
+                raise OrderError("Query accounts command sent successfully but received None as response.")
+            if not isinstance(response, dict) or "Code" not in response or "Data" not in response:
+                raise OrderError(f"Unexpected response: {response}")
+            if response.get("Code") != "0000":
+                raise OrderError(
+                    f"error querying accounts ({response.get('Code', 'No code')}): "
+                    + f"{response.get('ErrMsg', 'No ErrMsg')}"
+                )
+            self.logger.info("Accounts queried successfully.")
+            return response.get("Data", [])
+        except queue.Empty as e:
+            self.logger.error("Timeout waiting for query accounts response.")
+            raise TimeoutError("Timeout waiting for query accounts response.") from e
+        except Exception as e:
+            self.logger.error(f"Unexpected error querying accounts: {e}", exc_info=True)
             raise
 
     def is_worker_alive(self) -> bool:
