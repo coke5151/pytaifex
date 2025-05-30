@@ -1,6 +1,6 @@
 # PyTaifex - 臺灣期貨交易所 TTB API Python 封裝庫
 
-> **English version available**: [README_en.md](README_en.md)
+> **English version available**: [README_en.md](https://github.com/coke5151/pytaifex/blob/main/README_en.md)
 
 PyTaifex 是一個專為臺灣期貨交易所（TAIFEX）官方 TTB 交易 API 設計的 Python 封裝庫。它提供了一個簡潔、穩定且功能完整的介面，讓開發者能夠輕鬆地進行期貨交易、市場數據訂閱、部位查詢等操作。
 
