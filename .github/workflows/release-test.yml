@@ -23,4 +23,4 @@ jobs:
         run: uv build
 
       - name: Publish package distributions to TestPyPI
-        run: uv publish --index testpypi
+        run: uv publish --index testpypi --trusted-publishing
