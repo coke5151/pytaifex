@@ -11,11 +11,75 @@ from typing import Any, Callable
 
 
 # Errors
-class SubscribeError(Exception):
+class PyTaifexError(Exception):
+    """Base exception for all PyTaifex errors."""
+
     pass
 
 
-class OrderError(Exception):
+class SubscribeError(PyTaifexError):
+    """Raised when subscription to market data fails."""
+
+    pass
+
+
+class OrderError(PyTaifexError):
+    """Base class for order-related errors."""
+
+    pass
+
+
+class OrderCreationError(OrderError):
+    """Raised when order creation fails."""
+
+    pass
+
+
+class OrderModificationError(OrderError):
+    """Raised when order modification (price/quantity change) fails."""
+
+    pass
+
+
+class OrderCancellationError(OrderError):
+    """Raised when order cancellation fails."""
+
+    pass
+
+
+class OrderQueryError(OrderError):
+    """Raised when querying orders fails."""
+
+    pass
+
+
+class PositionQueryError(PyTaifexError):
+    """Raised when querying positions fails."""
+
+    pass
+
+
+class AccountQueryError(PyTaifexError):
+    """Raised when querying account information fails."""
+
+    pass
+
+
+class TTBConnectionError(PyTaifexError):
+    """Raised when connection to TTB fails."""
+
+    pass
+
+
+class TTBTimeoutError(PyTaifexError):
+    """Raised when operations timeout."""
+
+    pass
+
+
+class ValidationError(PyTaifexError):
+    """Raised when input validation fails."""
+
     pass
 
 
@@ -476,7 +540,7 @@ class TTB:
                 raise SubscribeError(response.get("ErrMsg", "No ErrMsg"))
         except queue.Empty as e:
             self.logger.error("Timeout waiting for subscribe response.")
-            raise TimeoutError("Timeout waiting for subscribe response.") from e
+            raise TTBTimeoutError("Timeout waiting for subscribe response.") from e
         except Exception as e:
             self.logger.error(f"Unexpected error subscribing: {e}", exc_info=True)
             raise
@@ -512,18 +576,18 @@ class TTB:
             response = self.__response_queue.get(timeout=5)
             self.logger.debug(f"Create order response: {response}")
             if response is None:
-                raise OrderError("Order creation command sent successfully but received None as response.")
+                raise OrderCreationError("Order creation command sent successfully but received None as response.")
             if not isinstance(response, dict) or "Code" not in response:
-                raise OrderError(f"Unexpected response: {response}")
+                raise OrderCreationError(f"Unexpected response: {response}")
             if response.get("Code") != "0000":
-                raise OrderError(
+                raise OrderCreationError(
                     f"error creating order ({response.get('Code', 'No code')}): "
                     + f"{response.get('ErrMsg', 'No ErrMsg')}"
                 )
             self.logger.info("Order created successfully.")
         except queue.Empty as e:
             self.logger.error("Timeout waiting for create order response.")
-            raise TimeoutError("Timeout waiting for create order response.") from e
+            raise TTBTimeoutError("Timeout waiting for create order response.") from e
         except Exception as e:
             self.logger.error(f"Unexpected error creating order: {e}", exc_info=True)
             raise
@@ -536,18 +600,18 @@ class TTB:
             self.__control_queue.put({"command": "change_price", "order_dict": order_dict})
             response = self.__response_queue.get(timeout=5)
             if response is None:
-                raise OrderError("Change price command sent successfully but received None as response.")
+                raise OrderModificationError("Change price command sent successfully but received None as response.")
             if not isinstance(response, dict) or "Code" not in response:
-                raise OrderError(f"Unexpected response: {response}")
+                raise OrderModificationError(f"Unexpected response: {response}")
             if response.get("Code") != "0000":
-                raise OrderError(
+                raise OrderModificationError(
                     f"error changing price ({response.get('Code', 'No code')}): "
                     + f"{response.get('ErrMsg', 'No ErrMsg')}"
                 )
             self.logger.info("Price changed successfully.")
         except queue.Empty as e:
             self.logger.error("Timeout waiting for change price response.")
-            raise TimeoutError("Timeout waiting for change price response.") from e
+            raise TTBTimeoutError("Timeout waiting for change price response.") from e
         except Exception as e:
             self.logger.error(f"Unexpected error changing price: {e}", exc_info=True)
             raise
@@ -559,18 +623,18 @@ class TTB:
             self.__control_queue.put({"command": "change_qty", "order_dict": order_dict})
             response = self.__response_queue.get(timeout=5)
             if response is None:
-                raise OrderError("Change quantity command sent successfully but received None as response.")
+                raise OrderModificationError("Change quantity command sent successfully but received None as response.")
             if not isinstance(response, dict) or "Code" not in response:
-                raise OrderError(f"Unexpected response: {response}")
+                raise OrderModificationError(f"Unexpected response: {response}")
             if response.get("Code") != "0000":
-                raise OrderError(
+                raise OrderModificationError(
                     f"error changing quantity ({response.get('Code', 'No code')}): "
                     + f"{response.get('ErrMsg', 'No ErrMsg')}"
                 )
             self.logger.info("Quantity changed successfully.")
         except queue.Empty as e:
             self.logger.error("Timeout waiting for change quantity response.")
-            raise TimeoutError("Timeout waiting for change quantity response.") from e
+            raise TTBTimeoutError("Timeout waiting for change quantity response.") from e
         except Exception as e:
             self.logger.error(f"Unexpected error changing quantity: {e}", exc_info=True)
             raise
@@ -582,11 +646,11 @@ class TTB:
             response = self.__response_queue.get(timeout=5)
             self.logger.debug(f"Get orders response: {response}")
             if response is None:
-                raise OrderError("Get orders command sent successfully but received None as response.")
+                raise OrderQueryError("Get orders command sent successfully but received None as response.")
             if not isinstance(response, dict) or "Code" not in response or "Data" not in response:
-                raise OrderError(f"Unexpected response: {response}")
+                raise OrderQueryError(f"Unexpected response: {response}")
             if response.get("Code") != "0000":
-                raise OrderError(
+                raise OrderQueryError(
                     f"error getting orders ({response.get('Code', 'No code')}): "
                     + f"{response.get('ErrMsg', 'No ErrMsg')}"
                 )
@@ -598,7 +662,7 @@ class TTB:
             ]
         except queue.Empty as e:
             self.logger.error("Timeout waiting for get orders response.")
-            raise TimeoutError("Timeout waiting for get orders response.") from e
+            raise TTBTimeoutError("Timeout waiting for get orders response.") from e
         except Exception as e:
             self.logger.error(f"Unexpected error getting orders: {e}", exc_info=True)
             raise
@@ -610,18 +674,18 @@ class TTB:
             self.__control_queue.put({"command": "cancel_order", "order_dict": order_dict})
             response = self.__response_queue.get(timeout=5)
             if response is None:
-                raise OrderError("Cancel order command sent successfully but received None as response.")
+                raise OrderCancellationError("Cancel order command sent successfully but received None as response.")
             if not isinstance(response, dict) or "Code" not in response:
-                raise OrderError(f"Unexpected response: {response}")
+                raise OrderCancellationError(f"Unexpected response: {response}")
             if response.get("Code") != "0000":
-                raise OrderError(
+                raise OrderCancellationError(
                     f"error cancelling order ({response.get('Code', 'No code')}): "
                     + f"{response.get('ErrMsg', 'No ErrMsg')}"
                 )
             self.logger.info("Order cancelled successfully.")
         except queue.Empty as e:
             self.logger.error("Timeout waiting for cancel order response.")
-            raise TimeoutError("Timeout waiting for cancel order response.") from e
+            raise TTBTimeoutError("Timeout waiting for cancel order response.") from e
         except Exception as e:
             self.logger.error(f"Unexpected error cancelling order: {e}", exc_info=True)
             raise
@@ -633,11 +697,11 @@ class TTB:
             response = self.__response_queue.get(timeout=5)
             self.logger.debug(f"Get positions response: {response}")
             if response is None:
-                raise OrderError("Get positions command sent successfully but received None as response.")
+                raise PositionQueryError("Get positions command sent successfully but received None as response.")
             if not isinstance(response, dict) or "Code" not in response or "Data" not in response:
-                raise OrderError(f"Unexpected response: {response}")
+                raise PositionQueryError(f"Unexpected response: {response}")
             if response.get("Code") != "0000":
-                raise OrderError(
+                raise PositionQueryError(
                     f"error getting positions ({response.get('Code', 'No code')}): "
                     + f"{response.get('ErrMsg', 'No ErrMsg')}"
                 )
@@ -645,7 +709,7 @@ class TTB:
             return [PositionData(position_dict) for position_dict in response.get("Data", [])]
         except queue.Empty as e:
             self.logger.error("Timeout waiting for get positions response.")
-            raise TimeoutError("Timeout waiting for get positions response.") from e
+            raise TTBTimeoutError("Timeout waiting for get positions response.") from e
         except Exception as e:
             self.logger.error(f"Unexpected error getting positions: {e}", exc_info=True)
             raise
@@ -657,11 +721,11 @@ class TTB:
             response = self.__response_queue.get(timeout=5)
             self.logger.debug(f"Query accounts response: {response}")
             if response is None:
-                raise OrderError("Query accounts command sent successfully but received None as response.")
+                raise AccountQueryError("Query accounts command sent successfully but received None as response.")
             if not isinstance(response, dict) or "Code" not in response or "Data" not in response:
-                raise OrderError(f"Unexpected response: {response}")
+                raise AccountQueryError(f"Unexpected response: {response}")
             if response.get("Code") != "0000":
-                raise OrderError(
+                raise AccountQueryError(
                     f"error querying accounts ({response.get('Code', 'No code')}): "
                     + f"{response.get('ErrMsg', 'No ErrMsg')}"
                 )
@@ -669,7 +733,7 @@ class TTB:
             return response.get("Data", [])
         except queue.Empty as e:
             self.logger.error("Timeout waiting for query accounts response.")
-            raise TimeoutError("Timeout waiting for query accounts response.") from e
+            raise TTBTimeoutError("Timeout waiting for query accounts response.") from e
         except Exception as e:
             self.logger.error(f"Unexpected error querying accounts: {e}", exc_info=True)
             raise
@@ -734,7 +798,8 @@ class TTB:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, *_):
+        """Context manager exit method."""
         self.shutdown()
 
     def __del__(self):
@@ -831,7 +896,7 @@ class TTB:
                     break
         except queue.Empty as e:
             self.logger.error("Timeout waiting for worker to initialize.")
-            raise TimeoutError("Timeout waiting for worker to initialize.") from e
+            raise TTBTimeoutError("Timeout waiting for worker to initialize.") from e
         except Exception as e:
             self.logger.error(f"Error waiting for worker to initialize: {e}")
             raise
