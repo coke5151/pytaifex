@@ -1,14 +1,11 @@
 [project]
 name = "pytaifex"
-version = "0.1.0"
-description = "An wrapper of taifex official TTB api."
+version = "1.0.0"
+description = "A Python wrapper for the official TTB API of the Taiwan Futures Exchange (TAIFEX)."
 readme = "README.md"
 authors = [{ name = "pytree", email = "houjunqimail@gmail.com" }]
 requires-python = ">=3.13"
-dependencies = [
-    "requests>=2.32.3",
-    "zmq>=0.0.0",
-]
+dependencies = ["requests>=2.32.3", "zmq>=0.0.0"]
 
 [build-system]
 requires = ["hatchling"]
