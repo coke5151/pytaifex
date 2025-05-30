@@ -1,3 +1,18 @@
+"""
+PyTaifex - Python wrapper for Taiwan Futures Exchange (TAIFEX) official TTB trading API.
+
+This module provides a Python interface for interacting with the TAIFEX trading system
+through the official TTB trading API. It includes classes for handling market data,
+orders, positions, and account information.
+
+Key Features:
+- Real-time market data subscription
+- Order management (create, modify, cancel)
+- Position and account queries
+- Comprehensive error handling
+- Multi-process architecture for stability
+"""
+
 import importlib.util
 import logging
 import multiprocessing
@@ -85,24 +100,76 @@ class ValidationError(PyTaifexError):
 
 # Enums
 class TimeInForce(Enum):
+    """Order time-in-force types for TAIFEX trading.
+
+    Attributes:
+        ROD: Rest of Day - Order remains active until end of trading day
+        IOC: Immediate or Cancel - Execute immediately or cancel unfilled portion
+        FOK: Fill or Kill - Execute completely or cancel entire order
+    """
+
     ROD = "1"
     IOC = "2"
     FOK = "3"
 
 
 class OrderSide(Enum):
+    """Order side enumeration for buy/sell operations.
+
+    Attributes:
+        BUY: Buy order (long position)
+        SELL: Sell order (short position)
+    """
+
     BUY = "1"
     SELL = "2"
 
 
 class OrderType(Enum):
+    """Order type enumeration for market/limit orders.
+
+    Attributes:
+        MARKET: Market order - execute at current market price
+        LIMIT: Limit order - execute at specified price or better
+    """
+
     MARKET = "1"
     LIMIT = "2"
 
 
 # Class
 class QuoteData:
+    """Represents real-time market quote data for a financial instrument.
+
+    This class encapsulates market data received from the TAIFEX trading system,
+    including price information, volume, bid/ask data, and timing information.
+
+    Attributes:
+        symbol (str): The trading symbol/instrument identifier
+        name (str): The full name of the instrument
+        open_ref (str): Closing price of last day.
+        open_price (str): Opening price of today.
+        high_price (str): Highest price of today.
+        low_price (str): Lowest price of today.
+        deno (float): Unknown, possibly related to price denomination
+        price (str): Current/last traded price
+        qty (str): Traded quantity
+        change_price (str): Price change from previous data
+        change_ratio (str): Percentage change from previous data
+        bid_ps (str): Best bid price
+        bid_pv (str): Best bid volume
+        ask_ps (str): Best ask price
+        ask_pv (str): Best ask volume
+        tick_time (str): Timestamp of the quote data
+        volume (str): Total trading volume
+    """
+
     def __init__(self, data: dict):
+        """Initialize QuoteData from a dictionary of market data.
+
+        Args:
+            data (dict): Dictionary containing market data fields from official TTB API
+        """
         self.symbol: str = data.get("Symbol", "")
         self.name: str = data.get("Name", "")
         self.open_ref: str = data.get("OpenRef", "")
@@ -122,6 +189,11 @@ class QuoteData:
         self.volume: str = data.get("Volume", "")
 
     def to_dict(self):
+        """Convert QuoteData to dictionary format.
+
+        Returns:
+            dict: Dictionary representation of the quote data
+        """
         return {
             "symbol": self.symbol,
             "name": self.name,
@@ -149,11 +221,42 @@ class QuoteData:
         return f"QuoteData({self.symbol}, {self.tick_time})"
 
     def __eq__(self, another):
+        """Check equality based on symbol and tick time."""
         return self.symbol == another.symbol and self.tick_time == another.tick_time
 
 
 class OrderData:
+    """Represents order information from the TAIFEX trading system.
+
+    This class encapsulates order data including order details, execution status,
+    pricing information, and timing data.
+
+    Attributes:
+        order_number (str): Unique order number assigned by the system
+        symbol_id (str): Trading symbol/instrument identifier
+        symbol_name (str): Full name of the trading instrument
+        status (str): Current order status (e.g., pending, filled, cancelled, but in Chinese)
+        side (pytaifex.OrderSide): Order side (BUY or SELL)
+        ofst_id (str): Unknown.
+        order_price (str): Order price specified when placing the order
+        order_qty (str): Total order quantity
+        pending_qty (str): Remaining unfilled quantity
+        filled_qty (str): Total filled quantity
+        filled_price (str): Average filled price
+        order_id (str): Internal order identifier
+        order_date (str): Date when order was placed
+        order_time (str): Time when order was placed
+    """
+
     def __init__(self, order_dict: dict):
+        """Initialize OrderData from a dictionary of order information.
+
+        Args:
+            order_dict (dict): Dictionary containing order data fields from official TTB API
+
+        Raises:
+            ValueError: If order side is not recognized
+        """
         self.order_number: str = order_dict.get("ORDNO", "")
         self.symbol_id: str = order_dict.get("COMD_ID", "")
         self.symbol_name: str = order_dict.get("COMD_NAME", "")
@@ -175,6 +278,11 @@ class OrderData:
         self.order_time: str = order_dict.get("ORDTM", "")
 
     def to_dict(self):
+        """Convert OrderData to dictionary format.
+
+        Returns:
+            dict: Dictionary representation of the order data
+        """
         return {
             "order_number": self.order_number,
             "symbol_id": self.symbol_id,
@@ -199,11 +307,42 @@ class OrderData:
         return self.__str__()
 
     def __eq__(self, another):
+        """Check equality based on order number and order ID."""
         return self.order_number == another.order_number and self.order_id == another.order_id
 
 
 class PositionData:
+    """Represents position information from the TAIFEX trading system.
+
+    This class encapsulates position data including deal information, instrument details,
+    profit/loss calculations, and trading metadata. Supports both single-leg and spread positions.
+
+    Attributes:
+        deal_id (str): Unique deal/position identifier
+        order_kind (str): Unknown, possibly related to original order type
+        symbol1_id (str): Primary instrument symbol identifier
+        side1 (pytaifex.OrderSide): Position side for primary instrument (BUY/SELL)
+        type1 (str): Type of primary instrument
+        symbol2_id (str): Secondary instrument symbol (for spreads)
+        side2 (pytaifex.OrderSide): Position side for secondary instrument (for spreads)
+        type2 (str): Type of secondary instrument (for spreads)
+        hold (str): Position holding quantity
+        deal_price (str): Execution price
+        settle_price (str): Current settlement price
+        floating_profit_loss (str): Unrealized profit/loss
+        currency (str): Currency code (ISO 4217)
+        symbol1_name (str): Full name of primary instrument
+        symbol2_name (str): Full name of secondary instrument (for spreads)
+        trade_hour (str): Trading hour when position was established
+        trade_day (str): Trading day when position was established
+    """
+
     def __init__(self, position_dict: dict):
+        """Initialize PositionData from a dictionary of position information.
+
+        Args:
+            position_dict (dict): Dictionary containing position data fields from TTB API
+        """
         self.deal_id: str = position_dict.get("DealID", "")
         self.order_kind: str = position_dict.get("OrderKind", "")
         self.symbol1_id: str = position_dict.get("ComdID1", "")
@@ -223,6 +362,11 @@ class PositionData:
         self.trade_day: str = position_dict.get("TradeDay", "")
 
     def to_dict(self):
+        """Convert PositionData to dictionary format.
+
+        Returns:
+            dict: Dictionary representation of the position data
+        """
         return {
             "deal_id": self.deal_id,
             "order_kind": self.order_kind,
@@ -250,12 +394,27 @@ class PositionData:
         return self.__str__()
 
     def __eq__(self, another):
+        """Check equality based on deal ID."""
         return self.deal_id == another.deal_id
 
 
 def _load_pyc_internal(pyc_file_path: str, logger: logging.Logger):
-    """
-    Load pyc module in worker process.
+    """Utility function to Load TTB pyc module in worker process.
+
+    This function dynamically loads the official TTB compiled Python module from a .pyc file.
+    It performs validation, creates module specifications, and executes
+    the module code in the current process.
+
+    Args:
+        pyc_file_path (str): Path to the TTB .pyc file
+        logger (logging.Logger): Logger instance for error reporting
+
+    Returns:
+        module: The loaded TTB module instance
+
+    Raises:
+        Exception: If .pyc file is not found or doesn't have .pyc extension
+        ImportError: If module creation or loading fails
     """
     logging.info(f"Loading pyc file: {pyc_file_path}")
 
@@ -320,8 +479,21 @@ def _ttb_worker_function(
     log_q_for_main_process: multiprocessing.Queue,
     parent_logger_name: str,
 ):
-    """
-    Worker function for TTB.
+    """Worker function for TTB operations in a separate process.
+
+    This function runs in a separate process and handles all TTB operations including
+    market data subscription, order management, and API communication. It communicates
+    with the main process through queues for commands, responses, and data.
+
+    Args:
+        pyc_file_path (str): Path to the TTB .pyc module file
+        host (str): TTB server host URL
+        zmq_port (int): ZeroMQ port for TTB communication
+        data_q_out (multiprocessing.Queue): Queue for sending market data to main process
+        control_q_in (multiprocessing.Queue): Queue for receiving commands from main process
+        response_q_out (multiprocessing.Queue): Queue for sending API responses to main process
+        log_q_for_main_process (multiprocessing.Queue): Queue for sending log messages to main process
+        parent_logger_name (str): Name of the parent logger for log hierarchy
     """
     worker_logger = logging.getLogger(f"{parent_logger_name}.TTBWorker")
 
@@ -461,6 +633,48 @@ def _ttb_worker_function(
 
 
 class TTB:
+    """Main interface for TTB API operations.
+
+    This class provides a high-level Python interface for interacting with the TAIFEX
+    trading system through the official TTB API. It manages market data subscriptions, order
+    operations, position queries, and account information retrieval using a multi-process
+    architecture for stability and performance.
+
+    The class uses separate processes for TTB operations to isolate potential crashes
+    and ensure the main application remains stable. Communication between processes
+    is handled through queues for commands, responses, and real-time data.
+
+    Key Features:
+    - Real-time market data subscription with callback support
+    - Complete order lifecycle management (create, modify, cancel)
+    - Position and account information queries
+    - Robust error handling with specific exception types
+    - Multi-process architecture for stability
+    - Comprehensive logging support
+    - Context manager support for resource cleanup
+
+    Example:
+        ```python
+        from pytaifex import TTB, QuoteData, OrderSide, TimeInForce, OrderType
+
+        def on_quote(data: QuoteData):
+            print(f"Received quote: {data}, symbol: {data.symbol}")
+            print(f"{data.to_dict()}")
+
+        with TTB("local/TTBHelp.pyc") as client:
+            client.register_quote_callback(on_quote)
+            client.subscribe(["TXFF5"])
+            client.create_order("TXFF5", OrderSide.BUY, "17000",
+                               TimeInForce.ROD, OrderType.LIMIT, "1", False)
+        ```
+
+    Attributes:
+        logger (logging.Logger): Logger instance for this TTB instance
+        pyc_file_path (str): Path to the TTB .pyc module file
+        host (str): TTB server host URL
+        zmq_port (int): ZeroMQ port for TTB communication
+    """
+
     def __init__(
         self,
         pyc_file_path: str,
@@ -469,6 +683,19 @@ class TTB:
         logger: logging.Logger | None = None,
         timeout: int = 5,
     ):
+        """Initialize TTB wrapper with connection parameters.
+
+        Args:
+            pyc_file_path (str): Path to the TTB .pyc module file
+            host (str, optional): TTB server host URL. Defaults to "http://localhost:8080"
+            zmq_port (int, optional): ZeroMQ port for TTB communication. Defaults to 51141
+            logger (logging.Logger, optional): Custom logger instance. If None, creates default logger
+            timeout (int, optional): Timeout in seconds for worker initialization. Defaults to 5
+
+        Raises:
+            pytaifex.TTBTimeoutError: If worker process fails to initialize within timeout
+            Exception: If TTB module loading or initialization fails
+        """
         if logger is not None:
             self.logger = logger
         else:
@@ -511,10 +738,36 @@ class TTB:
             raise
 
     def register_quote_callback(self, callback: Callable[[QuoteData], None]):
+        """Register a callback function for real-time market data.
+
+        The callback function will be called whenever new market data is received
+        for subscribed symbols. Multiple callbacks can be registered.
+
+        Args:
+            callback (Callable[[pytaifex.QuoteData], None]): Function to call with pytaifex.QuoteData objects
+        """
         self.logger.info(f"Registering quote callback: {callback.__name__}")
         self.__quote_callbacks.append(callback)
 
     def subscribe(self, symbols: list[str]):
+        """Subscribe to real-time market data for specified symbols.
+
+        Initiates subscription to market data feeds for the given trading symbols.
+        Data will be delivered through registered callbacks when available.
+
+        Args:
+            symbols (list[str]): List of trading symbols to subscribe to (e.g., ["TXFF5", "MTXF5"]),
+                "TXF5" is "TXF" + "F" + "5", "TXF" is the symbol, "F" is the month (start from "A" for January),
+                "5" is the year(2025's last digit 5).
+
+        Raises:
+            pytaifex.SubscribeError: If subscription fails due to invalid symbols or API errors
+            pytaifex.TTBTimeoutError: If subscription request times out
+
+        Note:
+            The TTB API may not return explicit confirmation for subscription requests.
+            Check the logs and callback data to verify successful subscription.
+        """
         self.logger.info(f"Subscribing to symbols: {', '.join(symbols)}")
         try:
             self.__control_queue.put({"command": "subscribe", "symbols": symbols})
@@ -558,6 +811,37 @@ class TTB:
         symbol2: str | None = None,
         side2: OrderSide | None = None,
     ):
+        """Create a new trading order.
+
+        Submits a new order to the TAIFEX trading system. Supports both single-leg
+        orders and spread orders (when symbol2 and side2 are provided).
+
+        Args:
+            symbol1 (str): Primary trading symbol (e.g., "TXFF5")
+            side1 (pytaifex.OrderSide): Order side for primary symbol (BUY or SELL)
+            price (str): Order price as string
+            time_in_force (pytaifex.TimeInForce): Order time-in-force (ROD, IOC, or FOK)
+            order_type (pytaifex.OrderType): Order type (MARKET or LIMIT)
+            order_qty (str): Order quantity as string
+            day_trade (bool): Whether this is a day trade order
+            symbol2 (str, optional): Secondary symbol for spread orders
+            side2 (pytaifex.OrderSide, optional): Order side for secondary symbol in spread orders
+
+        Raises:
+            pytaifex.OrderCreationError: If order creation fails due to validation or API errors
+            pytaifex.TTBTimeoutError: If order creation request times out
+
+        Example:
+            ```python
+            # Single-leg limit order
+            ttb.create_order("TXFF5", OrderSide.BUY, "17000",
+                           TimeInForce.ROD, OrderType.LIMIT, "1", False)
+
+            # Spread order
+            ttb.create_order("TXFF5", OrderSide.BUY, "50", TimeInForce.ROD,
+                           OrderType.LIMIT, "1", False, "TX01", OrderSide.SELL)
+            ```
+        """
         self.logger.info(f"Creating order for {symbol1} at price {price} with quantity {order_qty}.")
         order_dict = {
             "Symbol1": symbol1,
@@ -594,6 +878,16 @@ class TTB:
         return None
 
     def change_price(self, order_number: str, new_price: str):
+        """Modify the price of an existing order.
+
+        Args:
+            order_number (str): Order number to modify
+            new_price (str): New price for the order
+
+        Raises:
+            pytaifex.OrderModificationError: If price change fails
+            pytaifex.TTBTimeoutError: If request times out
+        """
         self.logger.info(f"Changing price of order {order_number} to {new_price}.")
         order_dict = {"OrdNo": order_number, "Price": new_price}
         try:
@@ -617,6 +911,16 @@ class TTB:
             raise
 
     def change_qty(self, order_number: str, new_qty: str):
+        """Modify the quantity of an existing order.
+
+        Args:
+            order_number (str): Order number to modify
+            new_qty (str): New quantity for the order
+
+        Raises:
+            pytaifex.OrderModificationError: If quantity change fails
+            pytaifex.TTBTimeoutError: If request times out
+        """
         self.logger.info(f"Changing quantity of order {order_number} to {new_qty}.")
         order_dict = {"OrdNo": order_number, "UdpQty": new_qty}
         try:
@@ -640,6 +944,18 @@ class TTB:
             raise
 
     def get_orders(self, include_done: bool = False):
+        """Retrieve current orders from the trading system.
+
+        Args:
+            include_done (bool, optional): Whether to include completed orders. Defaults to False
+
+        Returns:
+            list[pytaifex.OrderData]: List of OrderData objects representing current orders
+
+        Raises:
+            pytaifex.OrderQueryError: If order query fails
+            pytaifex.TTBTimeoutError: If request times out
+        """
         self.logger.info("Getting orders.")
         try:
             self.__control_queue.put({"command": "get_orders"})
@@ -668,6 +984,15 @@ class TTB:
             raise
 
     def cancel_order(self, order_number: str):
+        """Cancel an existing order.
+
+        Args:
+            order_number (str): Order number to cancel
+
+        Raises:
+            pytaifex.OrderCancellationError: If order cancellation fails
+            pytaifex.TTBTimeoutError: If request times out
+        """
         self.logger.info(f"Cancelling order {order_number}.")
         order_dict = {"OrdNo": order_number}
         try:
@@ -691,6 +1016,15 @@ class TTB:
             raise
 
     def get_positions(self):
+        """Retrieve current positions from the trading system.
+
+        Returns:
+            list[pytaifex.PositionData]: List of pytaifex.PositionData objects representing current positions
+
+        Raises:
+            pytaifex.PositionQueryError: If position query fails
+            pytaifex.TTBTimeoutError: If request times out
+        """
         self.logger.info("Getting positions.")
         try:
             self.__control_queue.put({"command": "get_positions"})
@@ -715,6 +1049,15 @@ class TTB:
             raise
 
     def get_accounts(self):
+        """Retrieve account information from the trading system.
+
+        Returns:
+            list[dict]: List of dictionaries containing account information
+
+        Raises:
+            pytaifex.AccountQueryError: If account query fails
+            pytaifex.TTBTimeoutError: If request times out
+        """
         self.logger.info("Querying accounts.")
         try:
             self.__control_queue.put({"command": "get_accounts"})
@@ -739,9 +1082,23 @@ class TTB:
             raise
 
     def is_worker_alive(self) -> bool:
+        """Check if the worker process is alive and running.
+
+        Returns:
+            bool: True if worker process is alive, False otherwise
+        """
         return self.__worker_process is not None and self.__worker_process.is_alive()
 
     def shutdown(self, timeout: int = 5):
+        """Shutdown the TTB wrapper and clean up resources.
+
+        Stops all background threads and processes, closes queues, and performs
+        cleanup operations. This method is automatically called when using the
+        TTB class as a context manager.
+
+        Args:
+            timeout (int, optional): Maximum time to wait for graceful shutdown. Defaults to 5
+        """
         self.logger.info("Shutting down TTB wrapper.")
 
         # Stop data listener thread
@@ -796,6 +1153,7 @@ class TTB:
         self.logger.info("TTB wrapper shutdown.")
 
     def __enter__(self):
+        """Context manager entry method."""
         return self
 
     def __exit__(self, *_):
@@ -803,6 +1161,7 @@ class TTB:
         self.shutdown()
 
     def __del__(self):
+        """Destructor to ensure proper cleanup."""
         needs_shutdown = False
         if self.__worker_process and self.__worker_process.is_alive():
             needs_shutdown = True
@@ -817,8 +1176,11 @@ class TTB:
             self.shutdown(timeout=2)
 
     def __log_listener_processor(self):
-        """
-        Running in the main process, deal with the log from worker process.
+        """Process log records from worker process in the main process.
+
+        This method runs in a separate thread and handles log records sent from
+        the worker process through the log queue. It forwards these records to
+        the main logger for proper handling and formatting.
         """
         self.logger.debug("__log_listener_processor started")
         while not self.__log_listener_stop_event.is_set():
@@ -847,6 +1209,7 @@ class TTB:
         self.logger.debug("__log_listener_processor stopped")
 
     def __start_log_listener_thread(self):
+        """Start the log listener thread for processing worker logs."""
         if self.__log_listener_thread and self.__log_listener_thread.is_alive():
             self.logger.warning("Logging listener thread already started")
             return
@@ -861,6 +1224,11 @@ class TTB:
         self.logger.debug("Logging listener thread started.")
 
     def __start_worker(self, timeout):
+        """Start the worker process for TTB operations.
+
+        Args:
+            timeout (int): Timeout for worker initialization
+        """
         if self.__worker_process and self.__worker_process.is_alive():
             self.logger.warning("Worker process already started")
             return
@@ -902,6 +1270,7 @@ class TTB:
             raise
 
     def __data_listener(self):
+        """Listen for data from worker process and dispatch to callbacks."""
         self.logger.debug("__data_listener started")
         while not self.__listener_stop_event.is_set():
             try:
@@ -930,6 +1299,7 @@ class TTB:
         self.logger.debug("__data_listener stopped")
 
     def __start_data_listener_thread(self):
+        """Start the data listener thread for processing market data."""
         if self.__listener_thread and self.__listener_thread.is_alive():
             self.logger.warning("Data listener thread already started")
             return
