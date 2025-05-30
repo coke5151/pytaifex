@@ -1,4 +1,4 @@
-name: Build and Publish Python Package to TestPyPI
+name: Build and Publish Python Package to PyPI
 
 on:
   push:
@@ -7,11 +7,11 @@ on:
 
 jobs:
   build-and-upload:
-    name: Build and upload to TestPyPI
+    name: Build and upload to PyPI
     runs-on: ubuntu-latest
     environment:
-      name: testpypi
-      url: https://test.pypi.org/p/pytaifex
+      name: pypi
+      url: https://pypi.org/p/pytaifex
     permissions:
       id-token: write
     steps:
@@ -24,5 +24,5 @@ jobs:
       - name: Build package
         run: uv build
 
-      - name: Publish package distributions to TestPyPI
-        run: uv publish --index testpypi --trusted-publishing automatic
+      - name: Publish package distributions to PyPI
+        run: uv publish --trusted-publishing automatic

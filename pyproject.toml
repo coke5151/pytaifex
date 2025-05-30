@@ -1,6 +1,6 @@
 [project]
 name = "pytaifex"
-version = "1.1.0"
+version = "1.0.0"
 description = "A Python wrapper for the official TTB API of the Taiwan Futures Exchange (TAIFEX)."
 readme = "README.md"
 authors = [{ name = "pytree", email = "houjunqimail@gmail.com" }]
@@ -13,9 +13,3 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = ["jupyterlab>=4.4.2"]
-
-[[tool.uv.index]]
-name = "testpypi"
-url = "https://test.pypi.org/simple/"
-publish-url = "https://test.pypi.org/legacy/"
-explicit = true
