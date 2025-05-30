@@ -12,6 +12,8 @@ jobs:
     environment:
       name: testpypi
       url: https://test.pypi.org/p/pytaifex
+    permissions:
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
