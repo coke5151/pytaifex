@@ -20,9 +20,10 @@ import os
 import queue
 import sys
 import threading
+from collections.abc import Callable
 from enum import Enum
 from logging.handlers import QueueHandler
-from typing import Any, Callable
+from typing import Any
 
 
 # Errors
