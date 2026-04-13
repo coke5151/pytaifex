@@ -15,7 +15,7 @@ class OfficialTTB:
         for p in psutil.process_iter():
             try:
                 exe = p.exe()
-                if exe and os.path.abspath(exe) == self._abs_ttb_path:
+                if exe and isinstance(exe, str) and os.path.abspath(exe) == self._abs_ttb_path:
                     existing_procs.append(p)
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
@@ -65,12 +65,88 @@ class OfficialTTB:
         login_btn.click_input()
         self.check_error_window()
 
+    def get_competitions(self) -> list[str]:
+        """Get all available competitions from the list."""
+        self.win.set_focus()
+
+        # 1. Locate the competition combobox
+        combo_box = self.win.child_window(auto_id="cbGameList", control_type="ComboBox")
+        combo_box.wait("exists visible enabled ready", timeout=10)
+
+        # 2. Expand the dropdown (UIA requires expanding to render ListItem elements)
+        combo_box.expand()
+        time.sleep(0.5)  # Give the UI a brief moment to render
+
+        # 3. Find all descendant elements of type ListItem
+        list_items = combo_box.descendants(control_type="ListItem")
+
+        competitions = []
+        for item in list_items:
+            text = item.window_text().strip()
+            if text:
+                competitions.append(text)
+
+        # 4. Collapse the dropdown menu
+        combo_box.collapse()
+
+        return competitions
+
+    def select_competition(self, identifier: int | str):
+        """
+        Select a competition from the dropdown.
+        Supports selecting by index (int) or by exact name (str).
+        """
+        self.win.set_focus()
+
+        combo_box = self.win.child_window(auto_id="cbGameList", control_type="ComboBox")
+        combo_box.wait("exists visible enabled ready", timeout=10)
+
+        combo_box.expand()
+        time.sleep(0.5)
+
+        list_items = combo_box.descendants(control_type="ListItem")
+
+        # Filter out empty items to safely match what get_competitions() returns
+        valid_items = []
+        for item in list_items:
+            text = item.window_text().strip()
+            if text:
+                valid_items.append((text, item))
+
+        target_item = None
+        if isinstance(identifier, int):
+            # Find item by index (0-based)
+            if 0 <= identifier < len(valid_items):
+                target_item = valid_items[identifier][1]
+            else:
+                combo_box.collapse()
+                raise IndexError(f"Competition index {identifier} is out of range (0 to {len(valid_items) - 1}).")
+        elif isinstance(identifier, str):
+            # Find item by exact name match
+            for text, item in valid_items:
+                if text == identifier:
+                    target_item = item
+                    break
+            if target_item is None:
+                combo_box.collapse()
+                raise ValueError(f"Competition with name '{identifier}' not found.")
+        else:
+            combo_box.collapse()
+            raise TypeError("Identifier must be an integer (index) or a string (name).")
+
+        # Click to select
+        target_item.click_input()
+
+        # Usually clicking an item automatically collapses the dropdown,
+        # but to be safe, give it a tiny sleep to let the UI update.
+        self.check_error_window()
+
     def check_error_window(self):
         time.sleep(2)
 
         # Detect error window under the main window
         try:
-            error_win = self.win.child_window(title_re=r".*登入失敗.*|.*錯誤.*", control_type="Window")
+            error_win = self.win.child_window(title_re=r".*失敗.*|.*錯誤.*", control_type="Window")
             if error_win.exists():
                 error_text = self.extract_error_content(error_win)
 
@@ -83,7 +159,7 @@ class OfficialTTB:
                     close_btn = error_win.child_window(control_type="Button", found_index=0)
                     close_btn.click_input()
 
-                raise RuntimeError(f"TTB login failed: {error_text}")
+                raise RuntimeError(f"TTB error: {error_text}")
         except PywinautoTimeoutError:
             pass
         except ElementNotFoundError:
