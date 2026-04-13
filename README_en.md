@@ -17,7 +17,7 @@ PyTaifex is a Python wrapper library designed for the official TTB trading API o
 
 ## 📋 System Requirements
 
-- Python 3.13 or higher
+- Python 3.9 or higher
 - Official TAIFEX TTB API module file (TTBHelp.pyc)
 - Official TAIFEX TTB software
 - A TAIFEX trading competition account
