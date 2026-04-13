@@ -9,6 +9,7 @@ PyTaifex is a Python wrapper library designed for the official TTB trading API o
 - **Real-time Market Data Subscription** - Supports simultaneous subscription to multiple products, receiving real-time quotes via callback functions.
 - **Complete Order Management** - Supports the full lifecycle management of orders, including creation, price modification, quantity modification, and cancellation.
 - **Position and Account Inquiry** - Provides real-time position inquiry and account margin information.
+- **Automated Login & Environment Setup** - Built-in UI automation module (`OfficialTTB`) to automatically launch TTB, log in, and select a competition.
 - **Multi-process Architecture** - Utilizes an independent process to handle TTB operations, ensuring the stability of the main program.
 - **Comprehensive Error Handling** - Offers detailed exception types for easy error diagnosis and handling.
 - **Context Manager Support** - Supports the `with` statement for automatic resource cleanup.
@@ -45,11 +46,30 @@ pip install -e .
 
 ## 📖 Quick Start
 
-### Basic Setup
+### 1. Environment Setup & Login
 
-First, you need to [download the TTB API module file and TTB software](https://sim2.taifex.com.tw/portal/tutorial) (TTBHelp.pyc) from the official TAIFEX website. Ensure that the TTB software is running, **you are logged into your account, and have selected the trading competition you wish to participate in**.
+First, you need to [download the TTB API module file and TTB software](https://sim2.taifex.com.tw/portal/tutorial) (TTBHelp.pyc) from the official TAIFEX website.
 
-### Basic Usage Example
+You can manually launch the TTB software and log in, **or use our provided fully automated UI login tool**:
+
+```python
+from pytaifex.official_ttb import OfficialTTB
+
+# Automatically launch TTB software. force=True kills existing instances for a clean start.
+ttb_app = OfficialTTB(r"C:\path\to\TaifexTradeBox.exe", force=True)
+
+# Perform automated login
+ttb_app.login("your_email@example.com", "your_password")
+
+# Query available competitions and select one by name (or index)
+# competitions = ttb_app.get_competitions()
+# print(competitions)
+ttb_app.select_competition("盤中延遲模式")  # or ttb_app.select_competition(0)
+```
+
+### 2. Basic Trading & Inquiry Examples
+
+Once the TTB software is running and a competition is selected, you can initialize the `TTB` class to begin programmatic trading:
 
 ```python
 from pytaifex import TTB, QuoteData, OrderSide, TimeInForce, OrderType
